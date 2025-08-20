@@ -15,6 +15,28 @@ from apps.runner.app.util.schemas import RunStatus as RunState
 logger = logging.getLogger(__name__)
 
 
+class AsyncDatabase:
+    """Simple async database wrapper for backward compatibility"""
+    
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.pool = AsyncDatabasePool(db_path)
+    
+    async def initialize(self):
+        """Initialize the database"""
+        await self.pool.initialize()
+    
+    async def close(self):
+        """Close the database"""
+        await self.pool.close()
+    
+    @asynccontextmanager
+    async def acquire(self):
+        """Acquire a connection from the pool"""
+        async with self.pool.acquire() as conn:
+            yield conn
+
+
 class AsyncDatabasePool:
     """Async database connection pool for SQLite with proper lifecycle management"""
     
