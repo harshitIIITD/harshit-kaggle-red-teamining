@@ -23,7 +23,7 @@ OpenAI has explicitly requested this red-teaming work as part of their safety ef
 
 ## Project Overview
 
-This is a comprehensive red-teaming system that uses OpenRouter API to systematically test GPT-OSS-20B for vulnerabilities. The system is designed to:
+This is a comprehensive red-teaming system that uses Ollama for local LLM inference to systematically test models for vulnerabilities. The system is designed to:
 - Autonomously discover and evaluate potential vulnerabilities
 - Use advanced techniques like multi-armed bandits for efficient exploration
 - Deduplicate findings to focus on novel discoveries
@@ -51,7 +51,7 @@ The system follows a modular architecture with these main components:
 - **tenacity** for retry/backoff logic
 - **SQLite** for durable state storage
 - **Docker Compose** for containerization
-- **OpenRouter API** for all LLM interactions
+- **Ollama** for local LLM inference
 
 ## Python Package Management
 
@@ -86,9 +86,14 @@ uv init
 # Add project dependencies
 uv add fastapi uvicorn httpx tenacity pydantic rich pytest
 
+# Install and start Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama serve  # In one terminal
+ollama pull llama3  # In another terminal
+
 # Copy environment template
 cp .env.example .env
-# Add your OPENROUTER_API_KEY to .env file
+# No API key needed - Ollama runs locally!
 ```
 
 ### Running Tests
@@ -164,7 +169,7 @@ SELECT * FROM state WHERE key='RUN_STATE';  # Check run state
     main.py            # FastAPI application and routes
     orchestrator.py    # Scheduling and bandit algorithms
     agents/           # Agent modules
-    providers/        # OpenRouter client
+    providers/        # Ollama client
     store/           # Database and file storage
     util/            # Utilities and schemas
 /configs/
@@ -181,7 +186,7 @@ SELECT * FROM state WHERE key='RUN_STATE';  # Check run state
 ## Configuration
 
 Main configuration is in `configs/config.yaml`:
-- **providers**: OpenRouter settings and model IDs
+- **providers**: Ollama settings and model IDs
 - **run**: Execution parameters (categories, concurrency, algorithms)
 - **evaluation**: Scoring thresholds and cost caps
 - **storage**: File paths for data persistence
@@ -192,7 +197,7 @@ Main configuration is in `configs/config.yaml`:
 When writing tests:
 1. Follow TDD - write tests before implementation
 2. Use property-based testing for mutators (determinism, bounds)
-3. Mock external API calls to OpenRouter
+3. Mock external API calls to Ollama
 4. Test pause/resume functionality thoroughly
 5. Verify idempotency of all operations
 

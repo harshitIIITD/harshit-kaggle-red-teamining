@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from apps.runner.app.providers.openrouter import call_or
+from apps.runner.app.providers.ollama import call_ollama
 from apps.runner.app.store.files import append_jsonl, redact_pii, rotate_file_if_needed
 from apps.runner.app.util.cost import estimate_cost
 
@@ -102,10 +102,10 @@ async def run_attempt(
         # Check for file rotation before writing
         rotate_file_if_needed(jsonl_path, max_size_mb=100)
         
-        # Call the model via OpenRouter
+        # Call the model via Ollama
         messages = [{"role": "user", "content": prompt}]
         response, usage = await asyncio.wait_for(
-            call_or(
+            call_ollama(
                 model=model,
                 messages=messages,
                 max_tokens=max_tokens,

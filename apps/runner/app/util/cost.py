@@ -69,9 +69,9 @@ class CostTracker:
 
 
 def estimate_prompt_cost(
-    prompt: str, model: str = "openai/gpt-3.5-turbo", response_tokens: int = 500
+    prompt: str, model: str = "llama3", response_tokens: int = 500
 ) -> float:
-    """Estimate cost for a prompt before sending
+    """Estimate cost for a prompt before sending (returns 0.0 for local Ollama inference)
 
     Args:
         prompt: The prompt text
@@ -79,49 +79,21 @@ def estimate_prompt_cost(
         response_tokens: Expected response tokens
 
     Returns:
-        Estimated cost in USD
+        Estimated cost in USD (always 0.0 for local inference)
     """
-    # Rough token estimation: ~4 chars per token
-    prompt_tokens = len(prompt) // 4
-
-    from apps.runner.app.providers.openrouter import MODEL_PRICING
-
-    if model not in MODEL_PRICING:
-        pricing = {"prompt": 1.0, "completion": 2.0}
-    else:
-        pricing = MODEL_PRICING[model]
-
-    prompt_cost = (prompt_tokens / 1_000_000) * pricing["prompt"]
-    completion_cost = (response_tokens / 1_000_000) * pricing["completion"]
-
-    return prompt_cost + completion_cost
+    # No cost for local inference
+    return 0.0
 
 
 def estimate_cost(model: str, usage: Dict[str, Any]) -> float:
-    """Calculate actual cost from usage information
+    """Calculate actual cost from usage information (returns 0.0 for local Ollama inference)
     
     Args:
         model: Model identifier
         usage: Usage dictionary with token counts
         
     Returns:
-        Cost in USD
+        Cost in USD (always 0.0 for local inference)
     """
-    if not usage:
-        return 0.0
-    
-    prompt_tokens = usage.get("prompt_tokens", 0)
-    completion_tokens = usage.get("completion_tokens", 0)
-    
-    from apps.runner.app.providers.openrouter import MODEL_PRICING
-    
-    if model not in MODEL_PRICING:
-        # Default pricing if model not found
-        pricing = {"prompt": 1.0, "completion": 2.0}
-    else:
-        pricing = MODEL_PRICING[model]
-    
-    prompt_cost = (prompt_tokens / 1_000_000) * pricing["prompt"]
-    completion_cost = (completion_tokens / 1_000_000) * pricing["completion"]
-    
-    return prompt_cost + completion_cost
+    # No cost for local inference
+    return 0.0
