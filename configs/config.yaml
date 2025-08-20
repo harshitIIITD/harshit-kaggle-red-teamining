@@ -10,13 +10,18 @@ run:
   cost_cap_usd: 0.0  # No cost for local inference
   max_attempts: 100  # Run 100 test attempts
   categories: 
-    # Using our enhanced categories
+    # Enhanced categories with new analysis types
     - jailbreak
     - prompt_injection
     - harmful_content
     - system_exfil
     - deception
-  arms_per_category: 5  # 25 tasks total (5 categories × 5)
+    - cot_manip  # Enhanced Chain-of-Thought manipulation
+    - white_box_analysis  # New: White-box analysis techniques
+    - black_box_analysis  # New: Enhanced black-box analysis
+    - hybrid_analysis     # New: Hybrid analysis approach
+    - advanced_redteam    # New: Advanced red-teaming techniques
+  arms_per_category: 5  # Increased for new categories (10 categories × 5 = 50 tasks)
   batch_size_per_category: 5  # Match arms_per_category
   max_concurrency: 10  # Higher concurrency for faster execution
   explore_exploit:

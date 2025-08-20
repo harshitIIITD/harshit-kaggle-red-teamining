@@ -63,7 +63,12 @@ class Planner:
         "manipulation",
         "discrimination",
         "illegal_activity",
-        "system_prompts"
+        "system_prompts",
+        # New enhanced analysis categories
+        "white_box_analysis",
+        "black_box_analysis", 
+        "hybrid_analysis",
+        "advanced_redteam"
     ]
     
     # Strategies per category
@@ -107,9 +112,22 @@ class Planner:
             "personal_info": ["pii_personal_1"]
         },
         "cot_manip": {
+            # Basic CoT attacks
             "reasoning_attack": ["cot_reasoning_1"],
             "thought_injection": ["cot_inject_1"],
-            "logic_bypass": ["cot_bypass_1"]
+            "logic_bypass": ["cot_bypass_1"],
+            
+            # Advanced CoT manipulation techniques
+            "reasoning_poisoning": ["cot_poison_premise", "cot_poison_chain", "cot_poison_conclusion"],
+            "multi_step_deception": ["cot_multi_step_1", "cot_multi_step_2", "cot_multi_step_3"],
+            "logical_fallacy_injection": ["cot_fallacy_straw", "cot_fallacy_circular", "cot_fallacy_false"],
+            "meta_reasoning_attack": ["cot_meta_reflect", "cot_meta_override", "cot_meta_hijack"],
+            "reasoning_chain_break": ["cot_break_chain", "cot_break_context", "cot_break_logic"],
+            "adversarial_thinking": ["cot_adv_roleplay", "cot_adv_perspective", "cot_adv_assumption"],
+            "cognitive_bias_exploit": ["cot_bias_confirm", "cot_bias_anchor", "cot_bias_frame"],
+            "step_by_step_hijack": ["cot_hijack_first", "cot_hijack_middle", "cot_hijack_final"],
+            "false_premise_chain": ["cot_false_start", "cot_false_middle", "cot_false_end"],
+            "reasoning_redirect": ["cot_redirect_topic", "cot_redirect_goal", "cot_redirect_outcome"]
         },
         # Additional comprehensive categories
         "harmful_content": {
@@ -153,6 +171,52 @@ class Planner:
             "extract": ["sysprompt_extract_1"],
             "override": ["sysprompt_override_1"],
             "reveal": ["sysprompt_reveal_1"]
+        },
+        
+        # White-box analysis techniques (simulated for black-box models)
+        "white_box_analysis": {
+            "architecture_probing": ["wb_arch_probe", "wb_arch_infer", "wb_arch_fingerprint"],
+            "internal_state_inference": ["wb_state_memory", "wb_state_context", "wb_state_attention"],
+            "gradient_simulation": ["wb_grad_direction", "wb_grad_magnitude", "wb_grad_adversarial"],
+            "model_introspection": ["wb_intro_capability", "wb_intro_knowledge", "wb_intro_limits"],
+            "parameter_estimation": ["wb_param_size", "wb_param_layers", "wb_param_tokens"],
+            "training_data_inference": ["wb_train_memorization", "wb_train_distribution", "wb_train_artifacts"],
+            "activation_analysis": ["wb_activ_pattern", "wb_activ_hidden", "wb_activ_attention"],
+            "weight_extraction": ["wb_weight_probe", "wb_weight_reverse", "wb_weight_estimate"]
+        },
+        
+        # Enhanced black-box analysis techniques  
+        "black_box_analysis": {
+            "query_based_probing": ["bb_query_systematic", "bb_query_binary", "bb_query_adaptive"],
+            "response_pattern_analysis": ["bb_pattern_style", "bb_pattern_content", "bb_pattern_structure"],
+            "behavioral_fingerprinting": ["bb_finger_personality", "bb_finger_bias", "bb_finger_capability"],
+            "transfer_attacks": ["bb_transfer_model", "bb_transfer_domain", "bb_transfer_technique"],
+            "oracle_simulation": ["bb_oracle_query", "bb_oracle_response", "bb_oracle_knowledge"],
+            "adversarial_queries": ["bb_adv_boundary", "bb_adv_corner", "bb_adv_edge"],
+            "model_extraction": ["bb_extract_logic", "bb_extract_knowledge", "bb_extract_behavior"],
+            "membership_inference": ["bb_member_train", "bb_member_test", "bb_member_distribution"]
+        },
+        
+        # Hybrid analysis combining white-box insights with black-box testing
+        "hybrid_analysis": {
+            "guided_black_box": ["hybrid_guided_probe", "hybrid_guided_attack", "hybrid_guided_extract"],
+            "white_box_informed": ["hybrid_informed_query", "hybrid_informed_pattern", "hybrid_informed_target"],
+            "multi_modal_attacks": ["hybrid_multi_text", "hybrid_multi_logic", "hybrid_multi_context"],
+            "adaptive_strategies": ["hybrid_adapt_response", "hybrid_adapt_defense", "hybrid_adapt_goal"],
+            "cross_validation": ["hybrid_cross_check", "hybrid_cross_verify", "hybrid_cross_confirm"],
+            "iterative_refinement": ["hybrid_iter_improve", "hybrid_iter_focus", "hybrid_iter_optimize"]
+        },
+        
+        # Advanced red-teaming techniques
+        "advanced_redteam": {
+            "model_backdoors": ["adv_backdoor_detect", "adv_backdoor_trigger", "adv_backdoor_exploit"],
+            "robustness_testing": ["adv_robust_noise", "adv_robust_perturb", "adv_robust_adversarial"],
+            "adversarial_prompting": ["adv_prompt_craft", "adv_prompt_optimize", "adv_prompt_genetic"],
+            "social_engineering": ["adv_social_trust", "adv_social_authority", "adv_social_urgency"],
+            "context_poisoning": ["adv_context_inject", "adv_context_manipulate", "adv_context_override"],
+            "multi_turn_exploitation": ["adv_multi_setup", "adv_multi_exploit", "adv_multi_chain"],
+            "steganographic_attacks": ["adv_steg_hidden", "adv_steg_encode", "adv_steg_decode"],
+            "temporal_attacks": ["adv_temporal_delay", "adv_temporal_sequence", "adv_temporal_memory"]
         }
     }
     
