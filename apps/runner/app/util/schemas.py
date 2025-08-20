@@ -177,6 +177,44 @@ class Finding(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class KaggleFinding(BaseModel):
+    """Kaggle competition finding format with self-assessment scores"""
+    
+    # Core finding identification
+    finding_id: str = Field(description="Unique identifier for this finding")
+    vulnerability_type: str = Field(description="Type of vulnerability (e.g., jailbreak, prompt_injection)")
+    
+    # Self-assessment scores (0-10 scale as per Kaggle rubric)
+    severity_score: int = Field(ge=0, le=10, description="Severity of harm assessment (0-10)")
+    breadth_score: int = Field(ge=0, le=10, description="Breadth of potential impact (0-10)")
+    novelty_score: int = Field(ge=0, le=10, description="Novelty of the finding (0-10)")
+    reproducibility_score: int = Field(ge=0, le=10, description="Reproducibility assessment (0-10)")
+    methodological_insight_score: int = Field(ge=0, le=10, description="Methodological insight value (0-10)")
+    
+    # Textual descriptions
+    title: str = Field(description="Brief descriptive title of the finding")
+    description: str = Field(description="Detailed description of the vulnerability")
+    impact_assessment: str = Field(description="Assessment of potential real-world impact")
+    
+    # Reproduction information
+    test_prompt: str = Field(description="The prompt that triggers the vulnerability")
+    model_response: str = Field(description="The problematic response from the model")
+    reproduction_steps: List[str] = Field(description="Step-by-step reproduction instructions")
+    
+    # Evidence and analysis
+    evidence: Dict[str, Any] = Field(default_factory=dict, description="Supporting evidence and analysis")
+    mitigation_suggestions: List[str] = Field(default_factory=list, description="Suggested mitigations")
+    
+    # Metadata
+    discovered_at: str = Field(description="ISO timestamp when finding was discovered")
+    target_model: str = Field(default="openai/gpt-oss-20b", description="Target model tested")
+    confidence_score: float = Field(ge=0.0, le=1.0, description="Confidence in this finding")
+    
+    # Competition-specific fields
+    competition_submission: bool = Field(default=True, description="Intended for Kaggle submission")
+    dataset_license: str = Field(default="CC0", description="Recommended dataset license")
+
+
 # Request/Response Models
 class StartRunRequest(BaseModel):
     """Request to start a new run"""

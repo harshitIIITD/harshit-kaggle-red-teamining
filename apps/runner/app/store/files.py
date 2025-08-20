@@ -13,6 +13,39 @@ import re
 _file_lock = threading.Lock()
 
 
+class FileStore:
+    """File storage manager for red-teaming system"""
+    
+    def __init__(self, base_path: str = "data"):
+        self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
+    
+    def append_jsonl(self, filename: str, record: Dict[str, Any]) -> None:
+        """Append a record to a JSONL file"""
+        filepath = self.base_path / filename
+        append_jsonl(filepath, record)
+    
+    def read_jsonl_records(self, filename: str) -> List[Dict[str, Any]]:
+        """Read all records from a JSONL file"""
+        filepath = self.base_path / filename
+        return read_jsonl_records(filepath)
+    
+    def write_text(self, filename: str, content: str) -> None:
+        """Write text content to a file"""
+        filepath = self.base_path / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+    
+    def read_text(self, filename: str) -> str:
+        """Read text content from a file"""
+        filepath = self.base_path / filename
+        if not filepath.exists():
+            return ""
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.read()
+
+
 def append_jsonl(filepath: Path, record: Dict[str, Any]) -> None:
     """
     Thread-safe append of a record to a JSONL file.

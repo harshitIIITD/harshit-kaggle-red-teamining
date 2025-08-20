@@ -612,23 +612,65 @@ class AsyncOrchestrator:
             if reporter and detector:
                 try:
                     logger.info(f"Generating report for run {self.run_id}")
+                    
+                    # Get findings for reporting
+                    findings = detector.get_promoted_findings()
+                    
+                    run_config = {
+                        "run_id": self.run_id,
+                        "target_model": self.config.get("target_model", "unknown"),
+                        "total_attempts": self.attempts_count,
+                        "successful_evaluations": self.success_count,
+                        "unique_clusters": clusters_count,
+                        "total_cost_usd": self.total_cost,
+                        "duration_seconds": duration,
+                        "model": self.config.get("target_model", "unknown"),
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+                    }
+                    
+                    # Generate standard report
                     report_path = reporter.generate_report(
                         detector=detector,
                         run_id=self.run_id,
-                        run_config={
-                            "run_id": self.run_id,
-                            "target_model": self.config.get("target_model", "unknown"),
-                            "total_attempts": self.attempts_count,
-                            "successful_evaluations": self.success_count,
-                            "unique_clusters": clusters_count,
-                            "total_cost_usd": self.total_cost,
-                            "duration_seconds": duration,
-                            "model": self.config.get("target_model", "unknown"),
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                        }
+                        run_config=run_config
                     )
                     result["report_path"] = report_path
                     logger.info(f"Report generated: {report_path}")
+                    
+                    # Export for Kaggle competition if findings exist
+                    if findings:
+                        try:
+                            # Export JSON findings
+                            kaggle_files = reporter.export_for_kaggle(findings, run_config)
+                            if kaggle_files:
+                                result["kaggle_files"] = kaggle_files
+                                logger.info(f"Exported {len(kaggle_files)} findings for Kaggle submission")
+                            
+                            # Generate competition writeup
+                            stats = {
+                                "total_attempts": self.attempts_count,
+                                "success_rate": self.success_count / max(self.attempts_count, 1),
+                                "total_cost": self.total_cost
+                            }
+                            writeup_content = reporter.generate_competition_writeup(
+                                self.run_id, findings, run_config, stats
+                            )
+                            
+                            # Save writeup
+                            writeup_path = Path(reporter.reports_dir) / "kaggle_submissions" / f"competition_writeup_{self.run_id}.md"
+                            writeup_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(writeup_path, 'w', encoding='utf-8') as f:
+                                f.write(writeup_content)
+                            
+                            result["kaggle_writeup"] = str(writeup_path)
+                            logger.info(f"Competition writeup generated: {writeup_path}")
+                            
+                        except Exception as e:
+                            logger.error(f"Failed to export Kaggle submission: {e}")
+                            result["kaggle_error"] = str(e)
+                    else:
+                        logger.info("No findings to export for Kaggle submission")
+                    
                 except Exception as e:
                     logger.error(f"Failed to generate report: {e}")
                     result["report_error"] = str(e)
