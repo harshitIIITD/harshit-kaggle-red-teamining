@@ -96,7 +96,7 @@ class JudgeIntegrator:
     Includes input sanitization, circuit breaker protection, and error recovery.
     """
     
-    def __init__(self, ollama_client: OllamaClient, judge_model: str = "meta-llama/llama-3.1-70b-instruct"):
+    def __init__(self, ollama_client: OllamaClient, judge_model: str = "llama3"):
         """
         Initialize judge integrator.
         

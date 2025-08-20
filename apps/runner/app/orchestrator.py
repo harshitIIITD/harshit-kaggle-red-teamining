@@ -430,7 +430,7 @@ class AsyncOrchestrator:
                 )
                 
                 # 2. Execute test using Tester agent
-                target_model = self.config.get("target_model", "meta-llama/llama-3.1-8b-instruct")
+                target_model = self.config.get("target_model", "llama3")
                 jsonl_path = Path(self.transcript_file)
                 
                 test_result = await run_attempt(
@@ -447,7 +447,7 @@ class AsyncOrchestrator:
                 # 3. Evaluate response using Evaluator
                 if self.evaluator is None:
                     eval_config = self.config.get("evaluation", {})
-                    judge_model = eval_config.get("judge_model", "meta-llama/llama-3.1-70b-instruct")
+                    judge_model = eval_config.get("judge_model", "llama3")
                     self.evaluator = Evaluator(
                         ollama_client=self.ollama_client,
                         judge_model=judge_model

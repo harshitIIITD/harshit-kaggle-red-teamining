@@ -102,7 +102,7 @@ class EvaluationOrchestrator:
     """
     
     def __init__(self, ollama_client: OllamaClient, 
-                 judge_model: str = "meta-llama/llama-3.1-70b-instruct",
+                 judge_model: str = "llama3",
                  batch_size: int = 10,
                  max_concurrent_evaluations: int = 5):
         """
