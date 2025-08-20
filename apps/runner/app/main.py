@@ -1,100 +1,457 @@
-# ABOUTME: Main FastAPI application with health endpoints and control API
-# ABOUTME: Provides /status, /ui, /control/* endpoints for system management
+# ABOUTME: Enhanced main FastAPI application with comprehensive error handling and monitoring
+# ABOUTME: Provides robust API endpoints with health checks, error tracking, and system management
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import time
 import logging
+import traceback
 from pathlib import Path
 import asyncio
 from dotenv import load_dotenv
+import signal
+import sys
+import os
 
-from apps.runner.app.util.config import load_config, get_flattened_config
-from apps.runner.app.store.async_db import get_db_pool, ensure_schema, get_state, set_state
-from apps.runner.app.agents.reporter import Reporter
+from .util.config import load_config, get_flattened_config
+from .store.async_db import get_db_pool, ensure_schema, get_state, set_state
+from .agents.reporter import Reporter
+from .util.exceptions import (
+    BaseRedTeamException, error_tracker, ErrorCode, ErrorSeverity, 
+    ErrorContext, handle_exceptions
+)
+from .monitoring.health import (
+    health_monitor, add_custom_metric, MetricType, 
+    HealthStatus, send_custom_alert
+)
+from .util.circuit_breaker import circuit_registry
+from .util.retry import api_retry_handler
+from .store.enhanced_file_store import EnhancedFileStore
+from .providers.openrouter import create_robust_openrouter_client
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure enhanced logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('logs/app.log', mode='a') if os.path.exists('logs') or os.makedirs('logs', exist_ok=True) else logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Global exception handler for unhandled exceptions
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    """Handle uncaught exceptions"""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    
+    logger.critical(
+        "Uncaught exception", 
+        exc_info=(exc_type, exc_value, exc_traceback)
+    )
+    
+    # Send critical alert
+    asyncio.create_task(send_custom_alert(
+        title="Critical System Error",
+        message=f"Uncaught exception: {exc_type.__name__}: {str(exc_value)}",
+        severity=ErrorSeverity.CRITICAL,
+        tags={"component": "global_handler", "exception_type": exc_type.__name__}
+    ))
+
+sys.excepthook = global_exception_handler
+
+
+class GracefulShutdownHandler:
+    """Handles graceful shutdown on SIGTERM/SIGINT"""
+    
+    def __init__(self):
+        self.shutdown_requested = False
+        self.shutdown_tasks = []
+    
+    def request_shutdown(self, signum, frame):
+        """Request graceful shutdown"""
+        if self.shutdown_requested:
+            logger.warning("Shutdown already requested, forcing exit")
+            sys.exit(1)
+        
+        self.shutdown_requested = True
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        
+        # Create shutdown task
+        loop = asyncio.get_event_loop()
+        task = loop.create_task(self.perform_shutdown())
+        self.shutdown_tasks.append(task)
+    
+    async def perform_shutdown(self):
+        """Perform graceful shutdown operations"""
+        try:
+            logger.info("Starting graceful shutdown sequence...")
+            
+            # Stop health monitoring
+            await health_monitor.stop()
+            
+            # Close circuit breakers
+            await circuit_registry.reset_all()
+            
+            # Save any pending state
+            logger.info("Graceful shutdown completed")
+            
+        except Exception as e:
+            logger.error(f"Error during graceful shutdown: {e}")
+        finally:
+            # Force exit after timeout
+            await asyncio.sleep(5)
+            sys.exit(0)
+
+# Initialize shutdown handler
+shutdown_handler = GracefulShutdownHandler()
+signal.signal(signal.SIGTERM, shutdown_handler.request_shutdown)
+signal.signal(signal.SIGINT, shutdown_handler.request_shutdown)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Manage application lifecycle - startup and shutdown"""
-    # Startup
-    logger.info("Starting red-teaming runner...")
+async def enhanced_lifespan(app: FastAPI):
+    """Enhanced application lifecycle management with comprehensive error handling"""
+    startup_errors = []
     
-    # Initialize app state
-    app.state.config = load_config()
-    app.state.start_time = time.time()
-    app.state.run_state = "idle"  # idle, running, paused, stopped, error
-    app.state.counters = {
-        "total_attempts": 0,
-        "successful_attempts": 0,
-        "failed_attempts": 0,
-        "findings_count": 0,
-        "clusters_count": 0,
-        "estimated_cost_usd": 0.0,
-    }
-    
-    # Initialize locks for thread-safe state access
-    app.state.counters_lock = asyncio.Lock()
-    app.state.run_state_lock = asyncio.Lock()  # Add lock for run_state
-    
-    logger.info("Configuration loaded successfully")
-    
-    # Initialize database pool and schema
-    db_path = app.state.config["storage"]["sqlite_path"]
-    app.state.db_pool = await get_db_pool(db_path)
-    await ensure_schema(db_path)
-    logger.info("Database pool initialized")
-
-    # Create data directories if they don't exist
-    data_dirs = [
-        Path(app.state.config["storage"]["sqlite_path"]).parent,
-        Path(app.state.config["storage"]["transcripts_path"]).parent,
-        Path(app.state.config["storage"]["findings_path"]).parent,
-        Path(app.state.config["storage"]["reports_dir"]),
-    ]
-    for dir_path in data_dirs:
-        dir_path.mkdir(parents=True, exist_ok=True)
-
-    yield
-
-    # Shutdown
-    logger.info("Shutting down red-teaming runner...")
-    async with app.state.run_state_lock:
-        app.state.run_state = "stopped"
-    
-    # Close database pool
-    if hasattr(app.state, 'db_pool') and app.state.db_pool:
-        await app.state.db_pool.close()
-        logger.info("Database pool closed")
-    
-    # Close Ollama client if exists
-    if hasattr(app.state, 'ollama_client'):
+    try:
+        # Startup sequence
+        logger.info("Starting enhanced red-teaming runner...")
+        
+        # Initialize app state with enhanced features
+        app.state.config = load_config()
+        app.state.start_time = time.time()
+        app.state.run_state = "idle"  # idle, running, paused, stopped, error
+        app.state.counters = {
+            "total_attempts": 0,
+            "successful_attempts": 0,
+            "failed_attempts": 0,
+            "findings_count": 0,
+            "clusters_count": 0,
+            "estimated_cost_usd": 0.0,
+        }
+        
+        # Initialize enhanced locks and state management
+        app.state.counters_lock = asyncio.Lock()
+        app.state.run_state_lock = asyncio.Lock()
+        app.state.startup_completed = False
+        app.state.shutdown_initiated = False
+        
+        logger.info("Configuration loaded successfully")
+        
+        # Initialize health monitoring system
         try:
-            await app.state.ollama_client.close()
-            logger.info("Ollama client closed")
+            await health_monitor.start()
+            logger.info("Health monitoring system started")
         except Exception as e:
-            logger.error(f"Error closing Ollama client: {e}")
+            startup_errors.append(f"Health monitor initialization failed: {e}")
+            logger.error(f"Failed to start health monitor: {e}")
+        
+        # Initialize database with enhanced error handling
+        try:
+            db_path = app.state.config["storage"]["sqlite_path"]
+            app.state.db_pool = await get_db_pool(db_path)
+            await ensure_schema(db_path)
+            logger.info(f"Enhanced database pool initialized: {db_path}")
+        except Exception as e:
+            startup_errors.append(f"Database initialization failed: {e}")
+            logger.error(f"Failed to initialize database: {e}")
+            raise
+        
+        # Initialize enhanced file store
+        try:
+            storage_config = app.state.config["storage"]
+            app.state.file_store = EnhancedFileStore(
+                attempts_path=storage_config["transcripts_path"],
+                findings_path=storage_config["findings_path"],
+                reports_dir=storage_config["reports_dir"],
+                enable_integrity_checks=True,
+                backup_enabled=True
+            )
+            logger.info("Enhanced file store initialized")
+        except Exception as e:
+            startup_errors.append(f"File store initialization failed: {e}")
+            logger.error(f"Failed to initialize file store: {e}")
+        
+        # Initialize OpenRouter client with full protection
+        try:
+            app.state.openrouter_client = create_robust_openrouter_client(
+                timeout=120,
+                enable_circuit_breaker=True,
+                enable_enhanced_retry=True,
+                enable_metrics_collection=True,
+                cost_warning_threshold=100.0
+            )
+            
+            # Perform health check
+            health_result = await app.state.openrouter_client.health_check()
+            if health_result["healthy"]:
+                logger.info("OpenRouter client initialized and healthy")
+            else:
+                logger.warning(f"OpenRouter client health check failed: {health_result}")
+                
+        except Exception as e:
+            startup_errors.append(f"OpenRouter client initialization failed: {e}")
+            logger.error(f"Failed to initialize OpenRouter client: {e}")
+        
+        # Create data directories with proper error handling
+        try:
+            data_dirs = [
+                Path(app.state.config["storage"]["sqlite_path"]).parent,
+                Path(app.state.config["storage"]["transcripts_path"]).parent,
+                Path(app.state.config["storage"]["findings_path"]).parent,
+                Path(app.state.config["storage"]["reports_dir"]),
+                Path("logs"),
+                Path("backups")
+            ]
+            
+            for dir_path in data_dirs:
+                try:
+                    dir_path.mkdir(parents=True, exist_ok=True)
+                    logger.debug(f"Ensured directory exists: {dir_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to create directory {dir_path}: {e}")
+                    
+        except Exception as e:
+            startup_errors.append(f"Directory creation failed: {e}")
+            logger.error(f"Failed to create data directories: {e}")
+        
+        # Record startup metrics
+        startup_duration = time.time() - app.state.start_time
+        await add_custom_metric(
+            name="app.startup.duration_seconds",
+            value=startup_duration,
+            metric_type=MetricType.GAUGE,
+            tags={"status": "success" if not startup_errors else "partial"}
+        )
+        
+        if startup_errors:
+            await add_custom_metric(
+                name="app.startup.errors",
+                value=len(startup_errors),
+                metric_type=MetricType.COUNTER
+            )
+            
+            # Send startup alert
+            await send_custom_alert(
+                title="Application Startup Issues",
+                message=f"Application started with {len(startup_errors)} errors: {'; '.join(startup_errors)}",
+                severity=ErrorSeverity.HIGH,
+                tags={"component": "startup", "error_count": str(len(startup_errors))}
+            )
+        
+        app.state.startup_completed = True
+        app.state.startup_errors = startup_errors
+        
+        logger.info(f"Enhanced red-teaming runner started successfully in {startup_duration:.2f}s")
+        if startup_errors:
+            logger.warning(f"Startup completed with {len(startup_errors)} errors")
+        
+        yield
+        
+    except Exception as e:
+        logger.critical(f"Fatal startup error: {e}")
+        await add_custom_metric(
+            name="app.startup.fatal_error",
+            value=1,
+            metric_type=MetricType.COUNTER,
+            tags={"error_type": type(e).__name__}
+        )
+        raise
+    
+    finally:
+        # Enhanced shutdown sequence
+        logger.info("Starting enhanced shutdown sequence...")
+        app.state.shutdown_initiated = True
+        shutdown_start = time.time()
+        
+        # Set run state to stopped
+        try:
+            async with app.state.run_state_lock:
+                app.state.run_state = "stopped"
+        except Exception as e:
+            logger.error(f"Failed to update run state during shutdown: {e}")
+        
+        # Stop health monitoring
+        try:
+            await health_monitor.stop()
+            logger.info("Health monitoring stopped")
+        except Exception as e:
+            logger.error(f"Error stopping health monitor: {e}")
+        
+        # Close OpenRouter client
+        if hasattr(app.state, 'openrouter_client'):
+            try:
+                await app.state.openrouter_client._close_client()
+                logger.info("OpenRouter client closed")
+            except Exception as e:
+                logger.error(f"Error closing OpenRouter client: {e}")
+        
+        # Close database pool
+        if hasattr(app.state, 'db_pool') and app.state.db_pool:
+            try:
+                await app.state.db_pool.close()
+                logger.info("Database pool closed")
+            except Exception as e:
+                logger.error(f"Error closing database pool: {e}")
+        
+        # Close circuit breakers
+        try:
+            await circuit_registry.reset_all()
+            logger.info("Circuit breakers reset")
+        except Exception as e:
+            logger.error(f"Error resetting circuit breakers: {e}")
+        
+        shutdown_duration = time.time() - shutdown_start
+        await add_custom_metric(
+            name="app.shutdown.duration_seconds",
+            value=shutdown_duration,
+            metric_type=MetricType.GAUGE
+        )
+        
+        logger.info(f"Enhanced shutdown completed in {shutdown_duration:.2f}s")
 
 
-# Create FastAPI app
+# Create enhanced FastAPI app with comprehensive error handling
 app = FastAPI(
-    title="GPT-OSS-20B Red-Teaming System",
-    description="Autonomous vulnerability discovery system for OpenAI Kaggle competition",
-    version="0.1.0",
-    lifespan=lifespan,
+    title="Enhanced GPT-OSS-20B Red-Teaming System",
+    description="Robust autonomous vulnerability discovery system with comprehensive error handling",
+    version="2.0.0",
+    lifespan=enhanced_lifespan,
+)
+
+# Add CORS middleware for cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
+# Global exception handlers
+@app.exception_handler(BaseRedTeamException)
+async def red_team_exception_handler(request: Request, exc: BaseRedTeamException):
+    """Handle custom red-team exceptions"""
+    # Track the error
+    await error_tracker.track_error(exc)
+    
+    # Record error metric
+    await add_custom_metric(
+        name="app.api.error",
+        value=1,
+        metric_type=MetricType.COUNTER,
+        tags={
+            "error_code": exc.error_code.value,
+            "severity": exc.severity.value,
+            "endpoint": str(request.url.path)
+        }
+    )
+    
+    # Send alert for critical errors
+    if exc.severity in [ErrorSeverity.CRITICAL, ErrorSeverity.HIGH]:
+        await send_custom_alert(
+            title=f"API Error: {exc.error_code.value}",
+            message=f"Endpoint {request.url.path}: {exc.message}",
+            severity=exc.severity,
+            tags={
+                "endpoint": str(request.url.path),
+                "error_code": exc.error_code.value
+            }
+        )
+    
+    return JSONResponse(
+        status_code=500 if exc.severity == ErrorSeverity.CRITICAL else 400,
+        content={
+            "error": {
+                "code": exc.error_code.value,
+                "message": exc.message,
+                "severity": exc.severity.value,
+                "category": exc.category.value,
+                "context": exc.context.to_dict() if exc.context else None,
+                "should_retry": exc.should_retry,
+                "retry_after": exc.retry_after
+            },
+            "timestamp": time.time(),
+            "request_id": exc.context.error_id if exc.context else None
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all other exceptions"""
+    # Create standardized exception
+    error_context = ErrorContext(
+        operation="api_request",
+        component="main_app",
+        additional_data={
+            "endpoint": str(request.url.path),
+            "method": request.method,
+            "client_host": request.client.host if request.client else None
+        }
+    )
+    
+    red_team_exc = BaseRedTeamException(
+        f"Internal server error: {str(exc)}",
+        error_code=ErrorCode.INTERNAL_ERROR,
+        severity=ErrorSeverity.HIGH,
+        context=error_context,
+        original_exception=exc
+    )
+    
+    # Track the error
+    await error_tracker.track_error(red_team_exc)
+    
+    # Record error metric
+    await add_custom_metric(
+        name="app.api.internal_error",
+        value=1,
+        metric_type=MetricType.COUNTER,
+        tags={
+            "error_type": type(exc).__name__,
+            "endpoint": str(request.url.path)
+        }
+    )
+    
+    logger.error(f"Unhandled exception in {request.url.path}: {exc}", exc_info=True)
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "An internal server error occurred",
+                "request_id": error_context.error_id
+            },
+            "timestamp": time.time()
+        }
+    )
+
+
+# Dependency for checking system health
+async def check_system_health():
+    """Dependency to check if system is healthy"""
+    if hasattr(app.state, 'shutdown_initiated') and app.state.shutdown_initiated:
+        raise HTTPException(status_code=503, detail="System is shutting down")
+    
+    health_status = await health_monitor.get_health_status()
+    if health_status["overall_status"] == HealthStatus.CRITICAL:
+        raise HTTPException(status_code=503, detail="System is in critical state")
+
+
+# Enhanced API endpoints
 @app.get("/")
+@handle_exceptions(component="main_app", operation="root_redirect")
 async def root():
     """Redirect root to UI dashboard"""
     return RedirectResponse(url="/ui")

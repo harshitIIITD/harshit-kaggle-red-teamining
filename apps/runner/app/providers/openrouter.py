@@ -641,6 +641,7 @@ class EnhancedOpenRouterClient:
                 status_code=response.status_code,
                 error_code=ErrorCode.API_INVALID_RESPONSE,
                 context=context
+            )
     
     @handle_exceptions(
         component="openrouter_client",
@@ -870,168 +871,152 @@ class EnhancedOpenRouterClient:
             # Track the error
             await error_tracker.track_error(error)
             
-            logger.error(f"Chat request {request_id} failed after {duration_ms:.1f}ms: {error}")
-            raise error
     
-    async def close(self):
-        """Close the HTTP client"""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-
-    def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        """Calculate cost based on model and token usage"""
-        if model not in MODEL_PRICING:
-            # Default pricing if model not found
-            pricing = {"prompt": 1.0, "completion": 2.0}
-        else:
-            pricing = MODEL_PRICING[model]
-
-        prompt_cost = (usage.get("prompt_tokens", 0) / 1_000_000) * pricing["prompt"]
-        completion_cost = (usage.get("completion_tokens", 0) / 1_000_000) * pricing[
-            "completion"
-        ]
-
-        return prompt_cost + completion_cost
-
-    @retry(**RETRY_CONFIG)
-    async def _make_request(
-        self, model: str, messages: List[Dict[str, str]], **params
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Make API request with retry logic and rate limit handling"""
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://github.com/kaggle-red-team",
-            "X-Title": "Kaggle Red Team Runner",
-            "Content-Type": "application/json",
-        }
-
-        payload = {"model": model, "messages": messages, **params}
-
-        # Use shared client instance
-        client = await self._get_client()
+    async def get_client_stats(self) -> Dict[str, Any]:
+        """Get comprehensive client statistics"""
+        async with self._metrics_lock:
+            current_time = datetime.now(UTC)
+            uptime_seconds = (current_time - self._last_reset_time).total_seconds()
+            
+            # Calculate success rate
+            success_rate = 0.0
+            if self.request_count > 0:
+                success_rate = (self.request_count - self.error_count) / self.request_count
+            
+            # Calculate average response time
+            avg_duration = 0.0
+            if self._request_metrics:
+                avg_duration = sum(m.duration_ms for m in self._request_metrics) / len(self._request_metrics)
+            
+            # Get recent metrics (last hour)
+            one_hour_ago = current_time - timedelta(hours=1)
+            recent_metrics = [
+                m for m in self._request_metrics
+                if m.timestamp > one_hour_ago
+            ]
+            
+            recent_cost = sum(m.cost_usd for m in recent_metrics)
+            recent_tokens = sum(m.total_tokens for m in recent_metrics)
+            
+            stats = {
+                "uptime_seconds": uptime_seconds,
+                "total_requests": self.request_count,
+                "total_errors": self.error_count,
+                "success_rate": success_rate,
+                "total_cost_usd": self.total_cost,
+                "total_tokens": self.total_tokens,
+                "average_duration_ms": avg_duration,
+                "recent_1h": {
+                    "requests": len(recent_metrics),
+                    "cost_usd": recent_cost,
+                    "tokens": recent_tokens
+                },
+                "configuration": {
+                    "circuit_breaker_enabled": self.enable_circuit_breaker,
+                    "enhanced_retry_enabled": self.enable_enhanced_retry,
+                    "metrics_collection_enabled": self.enable_metrics_collection,
+                    "timeout": self.timeout,
+                    "cost_warning_threshold": self.cost_warning_threshold
+                }
+            }
+            
+            # Add circuit breaker stats if available
+            if self._circuit_breaker:
+                circuit_stats = await self._circuit_breaker.get_metrics()
+                stats["circuit_breaker"] = circuit_stats
+            
+            # Add retry handler stats if available
+            if self._retry_handler:
+                retry_stats = await self._retry_handler.get_statistics()
+                stats["retry_handler"] = retry_stats
+            
+            return stats
+    
+    async def reset_stats(self):
+        """Reset client statistics"""
+        async with self._metrics_lock:
+            self.total_cost = 0.0
+            self.total_tokens = 0
+            self.request_count = 0
+            self.error_count = 0
+            self._request_metrics.clear()
+            self._last_reset_time = datetime.now(UTC)
+            
+            logger.info("Reset OpenRouter client statistics")
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Perform a health check of the OpenRouter API"""
+        health_check_start = time.time()
         
         try:
-            response = await client.post(
-                f"{self.base_url}/chat/completions", json=payload, headers=headers
+            # Make a minimal test request
+            test_messages = [{"role": "user", "content": "Hello"}]
+            
+            response, metadata = await self.chat(
+                model="meta-llama/llama-3.1-8b-instruct",  # Use a cheap model for health check
+                messages=test_messages,
+                max_tokens=1,
+                temperature=0.1
             )
-        except httpx.TimeoutException as e:
-            logger.warning(f"Timeout calling {model}: {e}")
-            raise  # Will be retried by tenacity
-        
-        # Handle rate limiting with custom exception
-        if response.status_code == 429:
-            retry_after = int(response.headers.get("retry-after", "60"))
-            logger.warning(f"Rate limited by OpenRouter. Waiting {retry_after}s before retry")
             
-            # Check rate limit headers for more info
-            rate_limit_requests = response.headers.get("x-ratelimit-limit-requests")
-            rate_limit_tokens = response.headers.get("x-ratelimit-limit-tokens") 
+            duration_ms = (time.time() - health_check_start) * 1000
             
-            if rate_limit_requests:
-                logger.info(f"Rate limit: {rate_limit_requests} requests")
-            if rate_limit_tokens:
-                logger.info(f"Rate limit: {rate_limit_tokens} tokens")
-                
-            # Raise custom exception with retry_after value
-            raise RateLimitError(
-                f"Rate limited, retry after {retry_after}s",
-                retry_after=retry_after
-            )
-        
-        # Handle other HTTP errors
-        if response.status_code >= 500:
-            logger.warning(f"Server error {response.status_code} from OpenRouter")
-            response.raise_for_status()  # Will be retried
-        
-        # Non-retryable client errors
-        if response.status_code >= 400:
-            logger.error(f"Client error {response.status_code}: {response.text}")
-            response.raise_for_status()  # Will not be retried
-
-        data = response.json()
-        # Handle both sync and async json() returns for testing
-        if asyncio.iscoroutine(data):
-            data = await data
-
-        content = data["choices"][0]["message"]["content"]
-        usage = data.get("usage", {})
-
-        # Track costs
-        cost = self.calculate_cost(model, usage)
-        self.total_cost += cost
-        self.total_tokens += usage.get("total_tokens", 0)
-
-        # Add cost to usage data
-        usage["cost_usd"] = cost
-
-        return content, usage
-
-    async def chat(
-        self, model: str, messages: List[Dict[str, str]], **params
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Public interface for chat completions with enhanced error handling"""
-        try:
-            return await self._make_request(model, messages, **params)
-        except RetryError as e:
-            # Extract the original exception from retry error
-            last_exception = e.last_attempt.exception() if hasattr(e, 'last_attempt') else None
+            return {
+                "healthy": True,
+                "response_time_ms": duration_ms,
+                "test_response": response[:50] + "..." if len(response) > 50 else response,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "metadata": {
+                    "cost_usd": metadata.get("cost_usd", 0),
+                    "tokens": metadata.get("usage", {}).get("total_tokens", 0)
+                }
+            }
             
-            if isinstance(last_exception, RateLimitError):
-                logger.error(f"Rate limit exceeded after all retries for {model}")
-                raise Exception(f"Rate limit exceeded. Please reduce request frequency or wait before retrying.")
-            elif isinstance(last_exception, httpx.TimeoutException):
-                logger.error(f"Request timed out after all retries for {model}")
-                raise Exception(f"Request timed out. The model {model} may be overloaded.")
-            else:
-                logger.error(f"All retries exhausted for {model}: {last_exception}")
-                raise Exception(f"Failed after {7} attempts. Last error: {last_exception}")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise Exception("Invalid API key. Please check your OPENROUTER_API_KEY.")
-            elif e.response.status_code == 403:
-                raise Exception(f"Access forbidden. Model {model} may not be available for your account.")
-            elif e.response.status_code == 404:
-                raise Exception(f"Model {model} not found. Please check the model name.")
-            else:
-                raise
         except Exception as e:
-            logger.error(f"Unexpected error calling {model}: {e}")
-            raise
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get current usage statistics"""
-        return {
-            "total_cost_usd": self.total_cost,
-            "total_tokens": self.total_tokens,
-        }
+            duration_ms = (time.time() - health_check_start) * 1000
+            
+            return {
+                "healthy": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "response_time_ms": duration_ms,
+                "timestamp": datetime.now(UTC).isoformat()
+            }
 
 
-# Module-level convenience function
-_client = None
+# Backwards compatibility alias
+OpenRouterClient = EnhancedOpenRouterClient
 
 
+# Convenience function for creating clients
+def create_openrouter_client(**kwargs) -> EnhancedOpenRouterClient:
+    """Create an enhanced OpenRouter client with default settings"""
+    return EnhancedOpenRouterClient(**kwargs)
+
+
+# Convenience function for creating clients with specific configurations
+def create_robust_openrouter_client(**kwargs) -> EnhancedOpenRouterClient:
+    """Create a fully robust OpenRouter client with all safety features enabled"""
+    defaults = {
+        "enable_circuit_breaker": True,
+        "enable_enhanced_retry": True,
+        "enable_metrics_collection": True,
+        "timeout": 120,
+        "cost_warning_threshold": 50.0
+    }
+    defaults.update(kwargs)
+    return EnhancedOpenRouterClient(**defaults)
+
+
+# Legacy compatibility functions
 async def call_or(
     model: str, messages: List[Dict[str, str]], **params
 ) -> Tuple[str, Dict[str, Any]]:
-    """Convenience function for OpenRouter API calls"""
-    global _client
-    if _client is None:
-        _client = OpenRouterClient()
-
-    return await _client.chat(model, messages, **params)
+    """Legacy convenience function for OpenRouter API calls"""
+    client = create_openrouter_client()
+    return await client.chat(model, messages, **params)
 
 
-def get_client() -> OpenRouterClient:
-    """Get or create the singleton client instance"""
-    global _client
-    if _client is None:
-        _client = OpenRouterClient()
-    return _client
-
-
-def reset_client():
-    """Reset the client (useful for testing)"""
-    global _client
-    _client = None
+def get_client() -> EnhancedOpenRouterClient:
+    """Get a new robust client instance"""
+    return create_robust_openrouter_client()
