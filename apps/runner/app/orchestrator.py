@@ -11,7 +11,7 @@ import random
 import uuid
 
 from apps.runner.app.store.async_db import AsyncDatabasePool, get_state, set_state
-from apps.runner.app.providers.openrouter import OpenRouterClient
+from apps.runner.app.providers.ollama import OllamaClient
 from apps.runner.app.agents.planner import Planner
 from apps.runner.app.agents.crafter import PromptCrafter
 from apps.runner.app.agents.tester import run_attempt
@@ -163,7 +163,7 @@ class AsyncOrchestrator:
         self.max_attempts = 1000
         
         # Agents and services
-        self.openrouter_client = None
+        self.ollama_client = None
         self.crafter = None
         self.tester = None
         self.evaluator = None
@@ -174,12 +174,12 @@ class AsyncOrchestrator:
     
     async def initialize(self) -> None:
         """Initialize agents and services"""
-        # Initialize OpenRouter client with config parameters
-        provider_config = self.config.get("providers", {}).get("openrouter", {})
-        self.openrouter_client = OpenRouterClient(
-            base_url=provider_config.get("base_url", "https://openrouter.ai/api/v1"),
+        # Initialize Ollama client with config parameters
+        provider_config = self.config.get("providers", {}).get("ollama", {})
+        self.ollama_client = OllamaClient(
+            base_url=provider_config.get("base_url", "http://localhost:11434"),
             timeout=provider_config.get("timeout", 60)
-            # api_key will be read from env var by default
+            # No API key needed for local Ollama
         )
         
         # Initialize planner
@@ -430,7 +430,7 @@ class AsyncOrchestrator:
                 )
                 
                 # 2. Execute test using Tester agent
-                target_model = self.config.get("target_model", "meta-llama/llama-3.1-8b-instruct")
+                target_model = self.config.get("target_model", "llama3")
                 jsonl_path = Path(self.transcript_file)
                 
                 test_result = await run_attempt(
@@ -447,9 +447,9 @@ class AsyncOrchestrator:
                 # 3. Evaluate response using Evaluator
                 if self.evaluator is None:
                     eval_config = self.config.get("evaluation", {})
-                    judge_model = eval_config.get("judge_model", "meta-llama/llama-3.1-70b-instruct")
+                    judge_model = eval_config.get("judge_model", "llama3")
                     self.evaluator = Evaluator(
-                        openrouter_client=self.openrouter_client,
+                        ollama_client=self.ollama_client,
                         judge_model=judge_model
                     )
                 
@@ -556,7 +556,7 @@ class AsyncOrchestrator:
         self.max_attempts = max_attempts
         
         # Initialize if not already done
-        if self.openrouter_client is None:
+        if self.ollama_client is None:
             await self.initialize()
         
         # Set run state
@@ -583,8 +583,8 @@ class AsyncOrchestrator:
             await self.checkpoint()
             
             # Clean up
-            if self.openrouter_client:
-                await self.openrouter_client.close()
+            if self.ollama_client:
+                await self.ollama_client.close()
             
             duration = time.time() - start_time
             

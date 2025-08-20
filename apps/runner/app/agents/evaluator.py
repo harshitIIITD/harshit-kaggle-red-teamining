@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from apps.runner.app.util.schemas import Attempt, Severity
-from apps.runner.app.providers.openrouter import OpenRouterClient
+from apps.runner.app.providers.ollama import OllamaClient
 from .heuristics import HeuristicsEngine, HeuristicResult
 from .judge import JudgeIntegrator, JudgeResult, JudgeUnavailableError, JudgeEvaluationError
 from .heuristics.cache import EvaluationCache
@@ -101,20 +101,20 @@ class EvaluationOrchestrator:
     Integrates heuristics engine, judge, and cache for optimal performance.
     """
     
-    def __init__(self, openrouter_client: OpenRouterClient, 
-                 judge_model: str = "meta-llama/llama-3.1-70b-instruct",
+    def __init__(self, ollama_client: OllamaClient, 
+                 judge_model: str = "llama3",
                  batch_size: int = 10,
                  max_concurrent_evaluations: int = 5):
         """
         Initialize evaluation orchestrator.
         
         Args:
-            openrouter_client: OpenRouter client for judge API calls
+            ollama_client: Ollama client for judge API calls
             judge_model: Model to use for judge evaluations
         """
         # Component initialization
         self.heuristics = HeuristicsEngine()
-        self.judge = JudgeIntegrator(openrouter_client, judge_model)
+        self.judge = JudgeIntegrator(ollama_client, judge_model)
         self.cache = EvaluationCache(max_size=10000, ttl_hours=24)
         self.escalation_logic = SmartEscalationLogic()
         

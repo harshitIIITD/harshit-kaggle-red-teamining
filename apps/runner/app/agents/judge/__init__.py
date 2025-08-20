@@ -9,7 +9,7 @@ from typing import Dict, Optional, Any
 from dataclasses import dataclass
 
 from apps.runner.app.util.schemas import Attempt, Severity
-from apps.runner.app.providers.openrouter import OpenRouterClient
+from apps.runner.app.providers.ollama import OllamaClient
 from .sanitizer import InputSanitizer
 from .prompts import get_judge_prompt, validate_judge_response
 
@@ -96,15 +96,15 @@ class JudgeIntegrator:
     Includes input sanitization, circuit breaker protection, and error recovery.
     """
     
-    def __init__(self, openrouter_client: OpenRouterClient, judge_model: str = "meta-llama/llama-3.1-70b-instruct"):
+    def __init__(self, ollama_client: OllamaClient, judge_model: str = "llama3"):
         """
         Initialize judge integrator.
         
         Args:
-            openrouter_client: OpenRouter client for API calls
+            ollama_client: Ollama client for API calls
             judge_model: Model to use for judge evaluations
         """
-        self.client = openrouter_client
+        self.client = ollama_client
         self.judge_model = judge_model
         self.sanitizer = InputSanitizer(max_length=7000)
         self.circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)

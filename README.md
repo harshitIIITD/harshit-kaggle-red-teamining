@@ -25,7 +25,7 @@ Our red-teaming system is designed to be:
 - **Scalable**: Handles thousands of test cases with bounded concurrency
 - **Resilient**: Supports pause/resume and crash recovery
 - **Novel-focused**: Deduplicates findings to focus on unique vulnerabilities
-- **Cost-Optimized**: Smart escalation reduces evaluation costs by 80%
+- **Cost-Optimized**: No API costs with local inference
 
 ### Key Components
 
@@ -73,7 +73,7 @@ templates:
 
 - **Python 3.11+** - Core implementation language
 - **FastAPI** - Web framework for API and dashboard
-- **OpenRouter** - Unified API for all LLM interactions
+- **Ollama** - Local LLM inference for all model interactions
 - **SQLite** - Durable state management with WAL mode
 - **Docker Compose** - Containerized deployment
 - **uv** - Fast Python package management
@@ -84,13 +84,13 @@ templates:
 
 - Python 3.11 or higher
 - Docker and Docker Compose (optional)
-- OpenRouter API key
-- 8GB+ RAM recommended
-- 10GB+ disk space for logs and data
+- Ollama installed and running locally
+- 8GB+ RAM recommended for local models
+- 10GB+ disk space for logs, data, and models
 
 ## 🚦 Quick Start
 
-### 1. Clone the Repository
+### 2. Clone and Setup Project
 ```bash
 git clone https://github.com/prateek/kaggle-red-team.git
 cd kaggle-red-team
@@ -107,7 +107,7 @@ uv add aiofiles aiosqlite datasketch fastapi httpx pydantic pytest pytest-asynci
 
 # Copy environment template
 cp .env.example .env
-# Edit .env and add your OPENROUTER_API_KEY
+# No API key needed - Ollama runs locally!
 ```
 
 ### 3. Run Tests
@@ -147,20 +147,19 @@ Open http://localhost:8000/ui in your browser
 
 ### Starting a Run
 ```bash
-# Basic run
+# Basic run with local Ollama model
 curl -X POST http://localhost:8000/runs \
   -H "Content-Type: application/json" \
-  -d '{"target_model":"meta-llama/llama-3.1-8b-instruct"}'
+  -d '{"target_model":"llama3"}'
 
 # Advanced configuration
 curl -X POST http://localhost:8000/runs \
   -H "Content-Type: application/json" \
   -d '{
-    "target_model": "openai/gpt-oss-20b",
+    "target_model": "llama3",
     "categories": ["harmful_content", "system_prompts", "privacy"],
     "max_attempts": 100,
-    "max_concurrency": 5,
-    "cost_cap_usd": 10.0
+    "max_concurrency": 5
   }'
 ```
 
@@ -243,8 +242,8 @@ Our system tests for vulnerabilities across 16 comprehensive categories:
 - All testing is conducted within the scope of the competition
 - Findings are responsibly disclosed through Kaggle submissions
 - PII is automatically redacted from all logs and reports
-- API keys are never committed to the repository
-- Cost caps prevent runaway expenses
+- No API keys required - everything runs locally
+- Resource monitoring prevents system overload
 - Input validation prevents injection attacks
 - Path sanitization blocks directory traversal
 
@@ -277,11 +276,11 @@ This is a competition entry, but we believe in collaborative learning:
 
 ### Common Issues
 
-1. **Rate Limiting (429 errors)**: Reduce `max_concurrency` in config
-2. **Database Locked**: Ensure WAL mode is enabled, check for stale processes
-3. **High Costs**: Adjust `cost_cap_usd` and review token usage
-4. **Memory Issues**: Rotate JSONL files, limit batch sizes
-5. **API Connection**: Verify OPENROUTER_API_KEY is set correctly
+1. **Ollama Connection**: Ensure Ollama is running (`ollama serve`) and models are installed
+2. **Rate Limiting**: Not applicable with local inference
+3. **Database Locked**: Ensure WAL mode is enabled, check for stale processes
+4. **High Memory Usage**: Monitor system resources, consider using smaller models
+5. **Model Loading Issues**: Check `ollama list` to verify models are installed
 
 ### Getting Help
 

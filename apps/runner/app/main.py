@@ -76,13 +76,13 @@ async def lifespan(app: FastAPI):
         await app.state.db_pool.close()
         logger.info("Database pool closed")
     
-    # Close OpenRouter client if exists
-    if hasattr(app.state, 'openrouter_client'):
+    # Close Ollama client if exists
+    if hasattr(app.state, 'ollama_client'):
         try:
-            await app.state.openrouter_client.close()
-            logger.info("OpenRouter client closed")
+            await app.state.ollama_client.close()
+            logger.info("Ollama client closed")
         except Exception as e:
-            logger.error(f"Error closing OpenRouter client: {e}")
+            logger.error(f"Error closing Ollama client: {e}")
 
 
 # Create FastAPI app
