@@ -60,6 +60,12 @@ class SafetyCategory(str, Enum):
     DISCRIMINATION = "discrimination"
     ILLEGAL_ACTIVITY = "illegal_activity"
     SYSTEM_PROMPTS = "system_prompts"
+    
+    # New enhanced analysis categories
+    WHITE_BOX_ANALYSIS = "white_box_analysis"
+    BLACK_BOX_ANALYSIS = "black_box_analysis"
+    HYBRID_ANALYSIS = "hybrid_analysis"
+    ADVANCED_REDTEAM = "advanced_redteam"
 
 
 class Severity(str, Enum):
