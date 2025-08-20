@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(uv init:*)",
+      "Bash(uv add:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "mcp__zen__listmodels",
+      "mcp__zen__thinkdeep",
+      "mcp__zen__planner",
+      "Bash(uv run:*)",
+      "Bash(find:*)",
+      "Bash(true)",
+      "Bash(git reset:*)",
+      "Bash(rm:*)",
+      "Bash(grep:*)",
+      "mcp__zen__consensus",
+      "mcp__zen__precommit",
+      "Bash(retrieved\" spam in logs\n\nTest Improvements:\n- Fixed test isolation issues by patching load_config before TestClient creation\n- Updated all test fixtures to work with new app.state pattern\n- All 149 tests now passing (previously 10 failures due to state isolation)\n\nThis refactoring eliminates global mutable state anti-patterns, ensures thread\nsafety, and follows FastAPI best practices for state management.\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "mcp__zen__codereview",
+      "Bash(timeout 30 uv run pytest:*)",
+      "Bash(llm models)",
+      "Bash(llm openai:*)",
+      "Bash(pip index versions:*)",
+      "Bash(curl:*)",
+      "Bash(mv:*)",
+      "Bash(sqlite3:*)"
+    ],
+    "deny": []
+  },
+  "enabledMcpjsonServers": [
+    "zen"
+  ]
+}

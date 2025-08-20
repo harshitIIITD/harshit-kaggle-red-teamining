@@ -1,0 +1,23 @@
+[project]
+name = "kaggle-red-team"
+version = "0.1.0"
+description = "Red-teaming system for OpenAI GPT-OSS-20B Kaggle competition"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiofiles>=24.1.0",
+    "aiosqlite>=0.21.0",
+    "datasketch>=1.6.5",
+    "fastapi>=0.116.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.11.7",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+    "python-dotenv>=1.1.1",
+    "pyyaml>=6.0.2",
+    "rich>=14.1.0",
+    "ruff>=0.12.8",
+    "tenacity>=9.1.2",
+    "uvicorn>=0.35.0",
+]

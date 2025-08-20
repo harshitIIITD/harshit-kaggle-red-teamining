@@ -1,0 +1,39 @@
+# ABOUTME: Docker Compose configuration for red-teaming runner service
+# ABOUTME: Single service setup with FastAPI, mounted configs and data volumes
+
+version: '3.8'
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: red-team-runner
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENROUTER_API_KEY=${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}
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data:/app/data
+      - ./seeds:/app/seeds:ro
+    command: ["uvicorn", "apps.runner.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - red-team-net
+
+networks:
+  red-team-net:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local
